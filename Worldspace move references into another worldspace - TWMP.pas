@@ -434,7 +434,7 @@ begin
   end;  // if GetIsPersistent(e) and (Signature(e) = 'CELL')....
 
   if (Signature(e) = 'CELL') and (not GetIsPersistent(e)) then begin
-    //addmessage('DEBUG: process CELL record...');
+    addmessage('DEBUG: process CELL record...');
 	// translate to Target Worldspace... ((gridx * 4096) + foffsetx )/4096
     cellx := GetElementNativeValues(e, 'XCLC\X');
     celly := GetElementNativeValues(e, 'XCLC\Y');
@@ -445,18 +445,20 @@ begin
     c := wbPositionToGridCell(epos);
 
     // check to see if cell has any children, if not then skip
-    if not Assigned(ChildGroup(e)) then begin
+//    if not Assigned(ChildGroup(e)) then begin
 //      addmessage('DEBUG: No child groups, skipping cell...');
-      exit;
-    end;
-//    addmessage(Format('DEBUG: analyzing cell[%s][%d,%d], num child groups=[%d]',[IntToHex(GetLoadOrderFormID(e),8), cellx, celly, ElementCount(ChildGroup(e))]));
+//      exit;
+//    end;
+    // do not proceed unless cell has landscape or pathgrid
+    addmessage(Format('DEBUG: analyzing cell[%s][%d,%d], num child groups=[%d]',[IntToHex(GetLoadOrderFormID(e),8), cellx, celly, ElementCount(ChildGroup(e))]));
     // absolute minimum: must have landscape record before processing
     srcLand := GetLandscapeForCell(e);
-    if not Assigned(srcLand) then begin
+    srcPathgrid := GetPathgridForCell(e);
+    if not Assigned(srcLand) and not Assigned(srcPathgrid) and not ElementExists(e, 'XCLR') then begin
 //      addmessage(Format('DEBUG: cell[%s][%d,%d] does not contain landscape record, skipping...',[IntToHex(GetLoadOrderFormID(e),8), cellx, celly]));
       exit;
-    end
-    else begin
+    end;
+    if Assigned(srcLand) then begin
       // make sure srcLand is a valid record ==> many broken, leftover records in Morrowind_ob.esm
       if not Assigned(ElementBySignature(srcLand,'VHGT')) and not Assigned(ElementBySignature(srcLand,'VNML')) then begin
         addmessage(Format('DEBUG: broken landscape found in source cell[%s][%d,%d], skipping',[IntToHex(GetLoadOrderFormID(e),8), cellx, celly]));
@@ -465,26 +467,74 @@ begin
     end;
 
     w := LinksTo(ElementByName(e, 'Worldspace'));
-    destcell := GetCellFromWorldspace(WinningOverride(DestWorld), c.X, c.Y);
-    // if not found, try next highest override
-    if not Assigned(destcell) then begin
-      overrideIndex := OverrideCount(DestWorld);
-      while (overrideIndex > 0) do begin
-	      overrideIndex := overrideIndex - 1;
-	      overrideWorld := OverrideByIndex(DestWorld, overrideIndex);
-        destcell := GetCellFromWorldspace(overrideWorld, c.X, c.Y);
-        if Assigned(destcell) then
-          break;
-      end;
+    overrideIndex := OverrideCount(DestWorld);
+    while (overrideIndex > 0) do begin
+	    overrideIndex := overrideIndex - 1;
+	    overrideWorld := OverrideByIndex(DestWorld, overrideIndex);
+      destcell := GetCellFromWorldspace(overrideWorld, c.X, c.Y);
+      if Assigned(destcell) then
+        break;
     end;
     if not Assigned(destcell) then begin
-      destcell := GetCellFromWorldspace(DestWorld, c.X, c.Y);
+      destcell := GetCellFromWorldspace(MasterOrSelf(DestWorld), c.X, c.Y);
       if not Assigned(destcell) then begin
         addmessage( Format('can not find destination cell [%d,%d] for record: [%s] @ [%d,%d]', [c.X, c.Y, IntToHex(GetLoadOrderFormID(e),8), cellx, celly]) );
         //raise Exception.Create('Can not find destination destcell ' + IntToStr(c.X) + ',' + IntToStr(c.Y));
         exit;
       end;
     end;
+
+  // first step: copy pathgrid if exist
+	// copy pathgrids --> translate pathgrid points (PGRP)
+    srcPathgrid := GetPathgridForCell(e);
+    if Assigned(srcPathgrid) then begin
+      destPathgrid := GetPathgridForCell(destcell);
+      if not Assigned(destPathgrid) then begin
+        overrideIndex := OverrideCount(destcell);
+        while (overrideIndex > 0) do begin
+	        overrideIndex := overrideIndex - 1;
+	        overrideRecord := OverrideByIndex(destcell, overrideIndex);
+          destPathgrid := GetPathgridForCell(overrideRecord);
+          if Assigned(destPathgrid) then
+            break;
+        end;
+      end;
+      if not Assigned(destPathgrid) then begin
+        overrideRecord := Master(destcell);
+        destPathgrid := GetPathgridForCell(overrideRecord);
+      end;
+      if not Assigned(destPathgrid) then begin
+//        addmessage('DEBUG: destPathgrid not found in destcell Master');
+        destPathgrid := srcPathgrid;
+      end;
+      if not Equals(GetFile(destPathgrid), GetFile(e)) then begin
+//        addmessage('DEBUG: copying override for destLand');
+        AddRequiredElementMasters(destPathgrid, GetFile(e), False);
+        destLand := wbCopyElementToFile(destPathgrid, GetFile(e), False, True);
+      end;
+      SetElementEditValues(destPathgrid, 'CELL', Name(destCell));
+      pointList := ElementBySignature(destPathgrid, 'PGRP');
+//      addmessage(Format('DEBUG: numpoints=[%d]', [ElementCount(pointList)]));
+      for i := 0 to ElementCount(pointList)-1 do begin
+        point := ElementByIndex(pointList, i);
+//        addmessage(Format('DEBUG: point[%d]: numElements=[%d]', [i, ElementCount(point)]));
+        refpos.x := GetNativeValue(ElementByIndex(point, 0)) + fOffsetX;
+        refpos.y := GetNativeValue(ElementByIndex(point, 1)) + fOffsetY;
+        if (fOffsetZ Mod 2) <> 0 then begin
+          refpos.z := GetNativeValue(ElementByIndex(point, 2)) + fOffsetZ + 1;
+        end
+        else begin
+          refpos.z := GetNativeValue(ElementByIndex(point, 2)) + fOffsetZ;
+        end;
+//        addmessage(Format('DEBUG: point[%d] = (%f, %f, %f)', [i, refpos.x, refpos.y, refpos.z]));
+
+        SetNativeValue(ElementByIndex(point,0), refpos.x);
+        SetNativeValue(ElementByIndex(point,1), refpos.y);
+        SetNativeValue(ElementByIndex(point,2), refpos.z);
+
+      end;
+    end;
+
     // if cell is not in our plugin yet, then copy as override
     if not Equals(GetFile(destcell), GetFile(e)) then begin
       AddRequiredElementMasters(destcell, GetFile(e), False);
@@ -492,8 +542,10 @@ begin
     end;
 
 	// over-ride CELL name & EditorID
-    SetElementNativeValues(destcell, 'EDID', GetElementNativeValues(e, 'EDID'));
-    SetElementNativeValues(destcell, 'FULL', GetElementNativeValues(e, 'FULL'));
+    if ElementExists(e, 'EDID') then
+      SetElementNativeValues(destcell, 'EDID', GetElementNativeValues(e, 'EDID'));
+    if ElementExists(e, 'FULL') then
+      SetElementNativeValues(destcell, 'FULL', GetElementNativeValues(e, 'FULL') + 'TWMP');
 
   // copy regions (XCLR)
     if ElementExists(e, 'XCLR') then begin
@@ -513,10 +565,16 @@ begin
       end;
     end;
 
-	// Decrease (XCLW) waterlevel by Z+1
-    waterlevel := GetElementNativeValues(e, 'XCLW');
-    waterlevel := waterlevel + (fOffsetZ-1);
-    SetElementNativeValues(destcell, 'XCLW', waterlevel);
+    if ElementExists(e, 'XCLW') then begin
+      waterlevel := GetElementNativeValues(e, 'XCLW');
+  
+      // **** no longer needed:
+      // **** (waterlevel + fOffsetZ) change was only needed prior to modifying landscape heightmaps
+      // Decrease (XCLW) waterlevel by Z+1
+  //    waterlevel := waterlevel + (fOffsetZ-1);
+
+      SetElementNativeValues(destcell, 'XCLW', waterlevel);
+    end;
 
   // copy landscape textures, heights, etc.
 //    srcLand := GetLandscapeForCell(e);
@@ -581,55 +639,6 @@ begin
 
     end;
 
-	// copy pathgrids --> translate pathgrid points (PGRP)
-    srcPathgrid := GetPathgridForCell(e);
-    if Assigned(srcPathgrid) then begin
-      destPathgrid := GetPathgridForCell(destcell);
-      if not Assigned(destPathgrid) then begin
-        overrideIndex := OverrideCount(destcell);
-        while (overrideIndex > 0) do begin
-	        overrideIndex := overrideIndex - 1;
-	        overrideRecord := OverrideByIndex(destcell, overrideIndex);
-          destPathgrid := GetPathgridForCell(overrideRecord);
-          if Assigned(destPathgrid) then
-            break;
-        end;
-      end;
-      if not Assigned(destPathgrid) then begin
-        overrideRecord := Master(destcell);
-        destPathgrid := GetPathgridForCell(overrideRecord);
-      end;
-      if not Assigned(destPathgrid) then begin
-//        addmessage('DEBUG: destPathgrid not found in destcell Master');
-        destPathgrid := srcPathgrid;
-      end;
-      if not Equals(GetFile(destPathgrid), GetFile(e)) then begin
-//        addmessage('DEBUG: copying override for destLand');
-        AddRequiredElementMasters(destPathgrid, GetFile(e), False);
-        destLand := wbCopyElementToFile(destPathgrid, GetFile(e), False, True);
-      end;
-      SetElementEditValues(destPathgrid, 'CELL', Name(destCell));
-      pointList := ElementBySignature(destPathgrid, 'PGRP');
-//      addmessage(Format('DEBUG: numpoints=[%d]', [ElementCount(pointList)]));
-      for i := 0 to ElementCount(pointList)-1 do begin
-        point := ElementByIndex(pointList, i);
-//        addmessage(Format('DEBUG: point[%d]: numElements=[%d]', [i, ElementCount(point)]));
-        refpos.x := GetNativeValue(ElementByIndex(point, 0)) + fOffsetX;
-        refpos.y := GetNativeValue(ElementByIndex(point, 1)) + fOffsetY;
-        if (fOffsetZ Mod 2) <> 0 then begin
-          refpos.z := GetNativeValue(ElementByIndex(point, 2)) + fOffsetZ + 1;
-        end
-        else begin
-          refpos.z := GetNativeValue(ElementByIndex(point, 2)) + fOffsetZ;
-        end;
-//        addmessage(Format('DEBUG: point[%d] = (%f, %f, %f)', [i, refpos.x, refpos.y, refpos.z]));
-
-        SetNativeValue(ElementByIndex(point,0), refpos.x);
-        SetNativeValue(ElementByIndex(point,1), refpos.y);
-        SetNativeValue(ElementByIndex(point,2), refpos.z);
-
-      end;
-    end;
   end; // if (Signature(e) = 'CELL')....
 
 end;

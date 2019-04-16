@@ -52,18 +52,22 @@ begin
 
   wrldgrup := ChildGroup(Worldspace);
   // iterate over Exterior Blocks
+//  addmessage(Format('DEBUG: analyzing destworld in %s: num blocks = %d', [GetFileName(GetFile(worldspace)), ElementCount(wrldgrup)]));
   for blockidx := 0 to Pred(ElementCount(wrldgrup)) do begin
     block := ElementByIndex(wrldgrup, blockidx);
+//    addmessage(Format('DEBUG: analyzing block[%d]: group label = %s, num subblocks = %d', [blockidx, GroupLabel(block), ElementCount(block)]));
     if GroupLabel(block) <> LabelBlock then Continue;
     // iterate over SubBlocks
     for subblockidx := 0 to Pred(ElementCount(block)) do begin
       subblock := ElementByIndex(block, subblockidx);
+//      addmessage(Format('DEBUG: analyzing subblock[%d]: group label = %s, num cells = %d', [subblockidx, GroupLabel(subblock), ElementCount(subblock)]));
       if GroupLabel(subblock) <> LabelSubBlock then Continue;
       // iterate over Cells
       for cellidx := 0 to Pred(ElementCount(subblock)) do begin
         cell := ElementByIndex(subblock, cellidx);
         if (Signature(cell) <> 'CELL') or GetIsPersistent(cell) then Continue;
         if (GetElementNativeValues(cell, 'XCLC\X') = GridX) and (GetElementNativeValues(cell, 'XCLC\Y') = GridY) then begin
+//          addmessage(Format('DEBUG: cell found in block[%d] subblock[%d] in [%s]', [blockidx, subblockidx, GetFilename(GetFile(worldspace))]));
           Result := cell;
           Exit;
         end;
@@ -148,17 +152,20 @@ begin
   cell := GetCellFromWorldspace(WinningOverride(DestWorld), c.X, c.Y);
   // if not found, try next highest override
   if not Assigned(cell) then begin
-    while (overrideIndex > 0 and not Assigned(cell)) do begin
+    while (overrideIndex > 0) do begin
 	    overrideIndex := overrideIndex - 1;
 	    overrideWorld := OverrideByIndex(DestWorld, overrideIndex);
 //      addmessage(Format('DEBUG: MoveRef() - Searching DestWorld in [%d]th Override = [%s]', [overrideIndex, GetFileName(GetFile(overrideWorld))]));
       cell := GetCellFromWorldspace(overrideWorld, c.X, c.Y);
+      if Assigned(cell) then
+        break;
     end;
   end;
   if not Assigned(cell) then begin
-    cell := GetCellFromWorldspace(Master(DestWorld), c.X, c.Y);
+//    addmessage(Format('DEBUG: MoveRef() - Searching DestWorld in Master = [%s]', [GetFileName(GetFile(MasterOrSelf(DestWorld)))]));
+    cell := GetCellFromWorldspace(MasterOrSelf(DestWorld), c.X, c.Y);
     if not Assigned(cell) then begin
-      addmessage( Format('can not find destination cell [%d,%d] for reference record: [%s]', [c.X, c.Y, IntToHex(GetLoadOrderFormID(aRef),8)]) );
+      addmessage( Format('ERROR: can not find destination cell [%d,%d] for reference record: [%s]', [c.X, c.Y, IntToHex(GetLoadOrderFormID(aRef),8)]) );
       //raise Exception.Create('Can not find destination cell ' + IntToStr(c.X) + ',' + IntToStr(c.Y));
       exit;
     end;
@@ -462,10 +469,12 @@ begin
     // if not found, try next highest override
     if not Assigned(destcell) then begin
       overrideIndex := OverrideCount(DestWorld);
-      while (overrideIndex > 0 and not Assigned(destcell)) do begin
+      while (overrideIndex > 0) do begin
 	      overrideIndex := overrideIndex - 1;
 	      overrideWorld := OverrideByIndex(DestWorld, overrideIndex);
         destcell := GetCellFromWorldspace(overrideWorld, c.X, c.Y);
+        if Assigned(destcell) then
+          break;
       end;
     end;
     if not Assigned(destcell) then begin
@@ -516,10 +525,12 @@ begin
       if not Assigned(destLand) then begin
 //        addmessage('DEBUG: could not find destLand, checking overrides');
         overrideIndex := OverrideCount(destcell);
-        while (overrideIndex > 0 and not Assigned(destLand)) do begin
+        while (overrideIndex > 0) do begin
 	        overrideIndex := overrideIndex - 1;
 	        overrideRecord := OverrideByIndex(destcell, overrideIndex);
           destLand := GetLandscapeForCell(overrideRecord);
+          if Assigned(destLand) then
+            break;
         end;
       end;
       if not Assigned(destLand) then begin
@@ -536,7 +547,7 @@ begin
       end;
       // now make sure destLand is the winning override
       if not IsWinningOverride(destLand) then begin
-        destLand := OverrideByIndex(OverrideCount(destLand)-1);
+        destLand := OverrideByIndex(destLand, OverrideCount(destLand)-1);
       end;
       if not Equals(GetFile(destLand), GetFile(e)) then begin
 //        addmessage('DEBUG: copying override for destLand');
@@ -576,10 +587,12 @@ begin
       destPathgrid := GetPathgridForCell(destcell);
       if not Assigned(destPathgrid) then begin
         overrideIndex := OverrideCount(destcell);
-        while (overrideIndex > 0 and not Assigned(destPathgrid)) do begin
+        while (overrideIndex > 0) do begin
 	        overrideIndex := overrideIndex - 1;
 	        overrideRecord := OverrideByIndex(destcell, overrideIndex);
           destPathgrid := GetPathgridForCell(overrideRecord);
+          if Assigned(destPathgrid) then
+            break;
         end;
       end;
       if not Assigned(destPathgrid) then begin

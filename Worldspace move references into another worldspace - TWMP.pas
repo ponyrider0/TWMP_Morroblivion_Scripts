@@ -448,6 +448,13 @@ begin
     if not Assigned(srcLand) then begin
 //      addmessage(Format('DEBUG: cell[%s][%d,%d] does not contain landscape record, skipping...',[IntToHex(GetLoadOrderFormID(e),8), cellx, celly]));
       exit;
+    end
+    else begin
+      // make sure srcLand is a valid record ==> many broken, leftover records in Morrowind_ob.esm
+      if not Assigned(ElementBySignature(srcLand,'VHGT')) and not Assigned(ElementBySignature(srcLand,'VNML')) then begin
+        addmessage(Format('DEBUG: broken landscape found in source cell[%s][%d,%d], skipping',[IntToHex(GetLoadOrderFormID(e),8), cellx, celly]));
+        exit;
+      end;
     end;
 
     w := LinksTo(ElementByName(e, 'Worldspace'));
@@ -522,10 +529,14 @@ begin
       end;
       if not Assigned(destLand) then begin
         addmessage(Format('ERROR: destLand not found in destcell Master [%s][%d,%d]', [IntToHex(GetLoadOrderFormID(destcell),8), c.X, c.Y]));
-        // create new land record
+        exit;
       end
       else begin
 //        addmessage('DEBUG: destLand found in destcell Master');
+      end;
+      // now make sure destLand is the winning override
+      if not IsWinningOverride(destLand) then begin
+        destLand := OverrideByIndex(OverrideCount(destLand)-1);
       end;
       if not Equals(GetFile(destLand), GetFile(e)) then begin
 //        addmessage('DEBUG: copying override for destLand');

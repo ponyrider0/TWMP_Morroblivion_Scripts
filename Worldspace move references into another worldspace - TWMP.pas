@@ -434,7 +434,7 @@ begin
   end;  // if GetIsPersistent(e) and (Signature(e) = 'CELL')....
 
   if (Signature(e) = 'CELL') and (not GetIsPersistent(e)) then begin
-    addmessage('DEBUG: process CELL record...');
+//    addmessage('DEBUG: process CELL record...');
 	// translate to Target Worldspace... ((gridx * 4096) + foffsetx )/4096
     cellx := GetElementNativeValues(e, 'XCLC\X');
     celly := GetElementNativeValues(e, 'XCLC\Y');
@@ -450,7 +450,7 @@ begin
 //      exit;
 //    end;
     // do not proceed unless cell has landscape or pathgrid
-    addmessage(Format('DEBUG: analyzing cell[%s][%d,%d], num child groups=[%d]',[IntToHex(GetLoadOrderFormID(e),8), cellx, celly, ElementCount(ChildGroup(e))]));
+//    addmessage(Format('DEBUG: analyzing cell[%s][%d,%d], num child groups=[%d]',[IntToHex(GetLoadOrderFormID(e),8), cellx, celly, ElementCount(ChildGroup(e))]));
     // absolute minimum: must have landscape record before processing
     srcLand := GetLandscapeForCell(e);
     srcPathgrid := GetPathgridForCell(e);

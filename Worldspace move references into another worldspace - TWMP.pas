@@ -459,9 +459,9 @@ begin
       exit;
     end;
     if Assigned(srcLand) then begin
-      // make sure srcLand is a valid record ==> many broken, leftover records in Morrowind_ob.esm
+      // make sure srcLand is a valid record ==> many incomplete (broken?) records in Morrowind_ob.esm
       if not Assigned(ElementBySignature(srcLand,'VHGT')) and not Assigned(ElementBySignature(srcLand,'VNML')) then begin
-        addmessage(Format('DEBUG: broken landscape found in source cell[%s][%d,%d], skipping',[IntToHex(GetLoadOrderFormID(e),8), cellx, celly]));
+//        addmessage(Format('DEBUG: incomplete landscape found in source cell[%s][%d,%d], skipping',[IntToHex(GetLoadOrderFormID(e),8), cellx, celly]));
         exit;
       end;
     end;
@@ -478,9 +478,15 @@ begin
     if not Assigned(destcell) then begin
       destcell := GetCellFromWorldspace(MasterOrSelf(DestWorld), c.X, c.Y);
       if not Assigned(destcell) then begin
-        addmessage( Format('can not find destination cell [%d,%d] for record: [%s] @ [%d,%d]', [c.X, c.Y, IntToHex(GetLoadOrderFormID(e),8), cellx, celly]) );
+        addmessage( Format('WARNING: can not find destination cell [%d,%d] for record: [%s] @ [%d,%d]', [c.X, c.Y, IntToHex(GetLoadOrderFormID(e),8), cellx, celly]) );
         //raise Exception.Create('Can not find destination destcell ' + IntToStr(c.X) + ',' + IntToStr(c.Y));
         exit;
+        // TODO: Create new cell record
+//        destcell := wbCopyElementToFile(e, GetFile(e), True, True);
+//        // then set X, Y grid values
+//        SetElementEditValues(destcell, 'Worldspace', Name(DestWorld));
+//        SetElementNativeValues(destcell, 'XCLC\X', c.X);
+//        SetElementNativeValues(destcell, 'XCLC\Y', c.Y);
       end;
     end;
 
@@ -505,12 +511,15 @@ begin
       end;
       if not Assigned(destPathgrid) then begin
 //        addmessage('DEBUG: destPathgrid not found in destcell Master');
+        // use source pathgrid record (move to new cell)
         destPathgrid := srcPathgrid;
+//        // copy as a new record
+//        destPathgrid := wbCopyElementToFile(srcPathgrid, GetFile(e), True, True);
       end;
       if not Equals(GetFile(destPathgrid), GetFile(e)) then begin
 //        addmessage('DEBUG: copying override for destLand');
         AddRequiredElementMasters(destPathgrid, GetFile(e), False);
-        destLand := wbCopyElementToFile(destPathgrid, GetFile(e), False, True);
+        destPathgrid := wbCopyElementToFile(destPathgrid, GetFile(e), False, True);
       end;
       SetElementEditValues(destPathgrid, 'CELL', Name(destCell));
       pointList := ElementBySignature(destPathgrid, 'PGRP');
@@ -531,8 +540,18 @@ begin
         SetNativeValue(ElementByIndex(point,0), refpos.x);
         SetNativeValue(ElementByIndex(point,1), refpos.y);
         SetNativeValue(ElementByIndex(point,2), refpos.z);
-
       end;
+      pointList := ElementBySignature(destPathgrid, 'PGRI');
+      for i := 0 to ElementCount(pointList)-1 do begin
+        point := ElementByIndex(pointList, i);
+        refpos.x := GetNativeValue(ElementByIndex(point, 2)) + fOffsetX;
+        refpos.y := GetNativeValue(ElementByIndex(point, 3)) + fOffsetY;
+        refpos.z := GetNativeValue(ElementByIndex(point, 4)) + fOffsetZ;
+        SetNativeValue(ElementByIndex(point,2), refpos.x);
+        SetNativeValue(ElementByIndex(point,3), refpos.y);
+        SetNativeValue(ElementByIndex(point,4), refpos.z);
+      end;
+
     end;
 
     // if cell is not in our plugin yet, then copy as override
@@ -545,7 +564,7 @@ begin
     if ElementExists(e, 'EDID') then
       SetElementNativeValues(destcell, 'EDID', GetElementNativeValues(e, 'EDID'));
     if ElementExists(e, 'FULL') then
-      SetElementNativeValues(destcell, 'FULL', GetElementNativeValues(e, 'FULL') + 'TWMP');
+      SetElementNativeValues(destcell, 'FULL', GetElementNativeValues(e, 'FULL'));
 
   // copy regions (XCLR)
     if ElementExists(e, 'XCLR') then begin
@@ -597,7 +616,8 @@ begin
         destLand := GetLandscapeForCell(overrideRecord);
       end;
       if not Assigned(destLand) then begin
-        addmessage(Format('ERROR: destLand not found in destcell Master [%s][%d,%d]', [IntToHex(GetLoadOrderFormID(destcell),8), c.X, c.Y]));
+        addmessage(Format('WARNING: destLand not found in destcell Master [%s][%d,%d], copying source as new record...', [IntToHex(GetLoadOrderFormID(destcell),8), c.X, c.Y]));
+        destLand := wbCopyElementToFile(srcLand, GetFile(e), True, True);
         exit;
       end
       else begin
